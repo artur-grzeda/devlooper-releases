@@ -43,12 +43,19 @@ TMP="$(mktemp -d)"
 say "Downloading $(basename "$DMG_URL")…"
 curl -fSL --progress-bar "$DMG_URL" -o "$TMP/devlooper.dmg"
 
+# Belt-and-suspenders: never let DEST be empty/root before an rm (guards against a cryptic
+# "unbound variable" and against ever `rm -rf`-ing / or /Applications itself).
+DEST="${DEST:-/Applications}"
+case "$DEST" in ""|"/") die "Refusing to install into '$DEST'." ;; esac
+
 say "Installing to $DEST…"
-MNT="$(hdiutil attach "$TMP/devlooper.dmg" -nobrowse -noautoopen | grep -o '/Volumes/.*' | tail -1)"
+MNT="$(hdiutil attach "$TMP/devlooper.dmg" -nobrowse -noautoopen 2>/dev/null | grep -o '/Volumes/.*' | tail -1 || true)"
 [ -n "$MNT" ] && [ -d "$MNT/$APP" ] || die "Couldn't mount the DMG or find $APP inside it."
-rm -rf "${DEST:?}/$APP"
+rm -rf "$DEST/$APP"
 ditto "$MNT/$APP" "$DEST/$APP"
 hdiutil detach "$MNT" -quiet >/dev/null 2>&1 || true; MNT=""
+
+[ -d "$DEST/$APP" ] || die "Install did not land at $DEST/$APP - check disk space / permissions."
 
 say "Clearing the Gatekeeper quarantine…"
 xattr -dr com.apple.quarantine "$DEST/$APP" 2>/dev/null || true
