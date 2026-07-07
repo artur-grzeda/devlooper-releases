@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Devlooper one-line installer (macOS, Apple Silicon).
+# Devlooper one-line installer (macOS: Apple Silicon or Intel).
 #
 #   curl -fsSL https://raw.githubusercontent.com/artur-grzeda/devlooper-releases/main/install.sh | bash
 #
-# Downloads the latest DMG from the public releases channel, installs Devlooper.app to /Applications,
-# clears the Gatekeeper quarantine (the app is not yet Apple-signed, so this skips the "can't be
-# opened" prompt), and launches it. No security prompts to click through.
+# Detects the Mac's architecture, downloads the matching DMG from the public releases channel,
+# installs Devlooper.app to /Applications, clears the Gatekeeper quarantine (the app is not yet
+# Apple-signed, so this skips the "can't be opened" prompt), and launches it. No security prompts.
 #
 # Env: DEVLOOPER_DEST (install dir, default /Applications), DEVLOOPER_NO_LAUNCH=1 (don't open).
 set -euo pipefail
@@ -22,16 +22,22 @@ cleanup() { [ -n "$MNT" ] && hdiutil detach "$MNT" -quiet >/dev/null 2>&1 || tru
 trap cleanup EXIT
 
 [ "$(uname -s)" = "Darwin" ] || die "Devlooper is macOS-only for now."
-[ "$(uname -m)" = "arm64" ]  || die "Devlooper ships for Apple Silicon (arm64); yours is $(uname -m)."
 command -v hdiutil >/dev/null 2>&1 || die "hdiutil not found (needs macOS)."
+
+# Pick the DMG that matches this Mac: Apple Silicon -> arm64, Intel -> x64.
+case "$(uname -m)" in
+  arm64)  DMG_ARCH="arm64" ;;
+  x86_64) DMG_ARCH="x64" ;;
+  *)      die "Unsupported architecture: $(uname -m)." ;;
+esac
 
 # Fall back to ~/Applications if /Applications isn't writable (non-admin user).
 if [ ! -w "$DEST" ]; then DEST="$HOME/Applications"; mkdir -p "$DEST"; fi
 
-say "Finding the latest Devlooper release…"
+say "Finding the latest Devlooper release (${DMG_ARCH})…"
 API="https://api.github.com/repos/${REPO}/releases/latest"
-DMG_URL="$(curl -fsSL "$API" | grep -oE '"browser_download_url"[^,]*arm64\.dmg"' | sed -E 's/.*"(https[^"]+)".*/\1/' | head -1)"
-[ -n "$DMG_URL" ] || die "Couldn't find an arm64 DMG in the latest release."
+DMG_URL="$(curl -fsSL "$API" | grep -oE "\"browser_download_url\"[^,]*${DMG_ARCH}\\.dmg\"" | sed -E 's/.*"(https[^"]+)".*/\1/' | head -1)"
+[ -n "$DMG_URL" ] || die "Couldn't find a ${DMG_ARCH} DMG in the latest release."
 
 TMP="$(mktemp -d)"
 say "Downloading $(basename "$DMG_URL")…"
